@@ -1,0 +1,85 @@
+name: Firebase Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'firebase/**'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Deployment target'
+        required: true
+        type: choice
+        options:
+          - rules
+          - indexes
+          - both
+
+concurrency:
+  group: firebase-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  DEPLOY_TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.target == 'rules' && 'firestore:rules' || github.event_name == 'workflow_dispatch' && inputs.target == 'indexes' && 'firestore:indexes' || 'firestore:rules,firestore:indexes' }}
+
+jobs:
+  deploy:
+    name: Deploy to Dev
+    runs-on: ubuntu-latest
+    environment: dev
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+
+      - name: Deploy Firebase Rules/Indexes
+        id: deploy
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: |
+          firebase deploy --only ${{ env.DEPLOY_TARGET }} \
+            --project ezcopro-dev \
+            --token "$FIREBASE_TOKEN" \
+            --non-interactive
+
+      - name: Post Deployment Status
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const status = '${{ steps.deploy.outcome }}';
+            const emoji = status === 'success' ? '✅' : '❌';
+
+            const body = `## Firebase Deploy - ${emoji} ${status}
+
+            **Commit**: \`${{ github.sha }}\`
+            **Target**: \`${{ env.DEPLOY_TARGET }}\`
+            **Environment**: dev
+            **Triggered by**: @${{ github.actor }}
+
+            ---
+            *[View workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})*`;
+
+            await github.rest.repos.createCommitComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+              body: body
+            });
+
+      - name: Fail on Error
+        if: steps.deploy.outcome == 'failure'
+        run: exit 1

@@ -1,0 +1,78 @@
+name: Terraform Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'terraform/**'
+  workflow_dispatch:
+
+concurrency:
+  group: terraform-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  TF_IN_AUTOMATION: true
+  TF_INPUT: false
+
+jobs:
+  deploy:
+    name: Deploy to Dev
+    runs-on: ubuntu-latest
+    environment: dev
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version_file: terraform/.terraform-version
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Terraform Init
+        working-directory: terraform/environments/dev
+        run: terraform init
+
+      - name: Terraform Apply
+        id: apply
+        working-directory: terraform/environments/dev
+        run: terraform apply -auto-approve -no-color
+
+      - name: Post Deployment Status
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const status = '${{ steps.apply.outcome }}';
+            const emoji = status === 'success' ? '✅' : '❌';
+
+            const body = `## Terraform Deploy - ${emoji} ${status}
+
+            **Commit**: \`${{ github.sha }}\`
+            **Environment**: dev
+            **Triggered by**: @${{ github.actor }}
+
+            ---
+            *[View workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})*`;
+
+            await github.rest.repos.createCommitComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+              body: body
+            });
+
+      - name: Fail on Error
+        if: steps.apply.outcome == 'failure'
+        run: exit 1
