@@ -17,6 +17,10 @@ concurrency:
 permissions:
   contents: write
 
+env:
+  VERCEL_ORG_ID: team_NwcLM1S0gRKk7W2rdroiZZTW
+  VERCEL_PROJECT_ID: prj_WemEXFHOhDJQmE1CelUisBuFfBX0
+
 jobs:
   deploy:
     name: Deploy to Vercel
