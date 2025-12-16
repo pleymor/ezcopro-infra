@@ -21,7 +21,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   DEPLOY_TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.target == 'rules' && 'firestore:rules' || github.event_name == 'workflow_dispatch' && inputs.target == 'indexes' && 'firestore:indexes' || 'firestore:rules,firestore:indexes' }}
